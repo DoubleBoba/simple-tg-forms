@@ -1,0 +1,6 @@
+questions:
+  - question_text: "Сколько тебе лет?"
+    required: true
+  - question_text: "В какой стране ты живешь?"
+    required: false
+  
