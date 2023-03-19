@@ -38,12 +38,9 @@ func (router *Router) HandleUpdate(ctx context.Context, update *tgbotapi.Update)
 	if update.Message != nil && update.Message.IsCommand() {
 		return router.HandleCommand(ctx, update)
 	} else if update.Message != nil && update.Message.Text != "" {
-		ReadChannel(
-			ctx,
-			HandleQuestionAnswer(ctx, update, router.bot, router.db_client),
-		)
+		HandleQuestionAnswer(ctx, update, router.bot, router.db_client)
 	} else {
-		return fmt.Errorf("Upddate with id %v is unhandled\n", update.UpdateID)
+		return fmt.Errorf("upddate with id %v is unhandled", update.UpdateID)
 	}
 
 	return nil

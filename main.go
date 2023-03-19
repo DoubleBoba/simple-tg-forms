@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 
+	"cloud.google.com/go/firestore"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"github.com/sourcegraph/conc"
 	tgbotapi "gitlab.com/kingofsystem/telegram-bot-api/v5"
 )
 
@@ -15,11 +17,23 @@ func init() {
 	functions.HTTP("process-tg-update", ProcessTelegramUpdate)
 }
 
+type ContextKey string
+
+var wg_ctx_key = ContextKey("wg_ctx_key")
+
+// Entry function that called when telegram hook is triggered.
 func ProcessTelegramUpdate(response_writer http.ResponseWriter, request *http.Request) {
-	ctx := context.Background()
+	wg := conc.NewWaitGroup()
+	ctx := context.WithValue(context.Background(), wg_ctx_key, wg)
 
-	create_client_channel := createFirestoreClient(ctx)
+	// Asynchronyously obtain database connection, and don't block further execution.
+	// If you will need connection at some point in the future, you can take it from the channel.
+	firestore_client_future := make(chan *firestore.Client)
+	wg.Go(func() {
+		firestore_client_future <- createFirestoreClient(ctx)
+	})
 
+	// Do some other work.
 	// check that secret token matches one from from enviroment variable
 	header_value, ok := request.Header["X-Telegram-Bot-Api-Secret-Token"]
 	if !ok {
@@ -40,19 +54,22 @@ func ProcessTelegramUpdate(response_writer http.ResponseWriter, request *http.Re
 	}
 	bot.Debug = true
 
-	firestore_client := <-create_client_channel
+	// At this point i found out that i actually want to use database connection and i can obtain it.
+	firestore_client := <-firestore_client_future
 	defer firestore_client.Close()
 
 	router := NewRouter(bot, firestore_client)
 	router.AddHandler("/start", StartCommand)
 	router.AddHandler("/ping", PingCommand)
 
-	save_update_channel := save_update(ctx, firestore_client, &update)
-	defer ReadChannel(ctx, save_update_channel)
+	wg.Go(func() {
+		save_update(ctx, firestore_client, &update)
+	})
 
 	err = router.HandleUpdate(ctx, &update)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("Update handled!")
+	wg.Wait()
 }
